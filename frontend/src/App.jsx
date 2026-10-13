@@ -397,7 +397,7 @@ export default function App() {
         <About />
 
         <footer className="wrap foot">
-          Pulse Monitor, 2026.{REPO && <> <a href={REPO} target="_blank" rel="noreferrer">Kode di GitHub</a>.</>}
+          Pulse Monitor, 2026.{REPO && <> <a href={REPO} target="_blank" rel="noreferrer">Code in GitHub</a>.</>}
         </footer>
       </main>
     </>

@@ -1,5 +1,3 @@
-// Token mengikuti sistem tema OpenCode: primary, secondary, accent, success, warning, error,
-// text, muted, border, background, panel. Tiap token jadi variabel CSS (--primary, dst).
 const T = (background, panel, text, muted, border, primary, secondary, accent, success, warning, error, scheme) =>
   ({ background, panel, text, muted, border, primary, secondary, accent, success, warning, error, scheme });
 
@@ -18,7 +16,6 @@ export const THEMES = {
   "one-dark": T("#282c34", "#21252b", "#abb2bf", "#8b92a0", "#3e4451", "#61afef", "#c678dd", "#56b6c2", "#98c379", "#e5c07b", "#e06c75"),
 };
 
-// "system" mengikuti mode terang/gelap browser, seperti tema system di OpenCode
 export const THEME_NAMES = ["system", ...Object.keys(THEMES)];
 
 export const palette = (name) =>
