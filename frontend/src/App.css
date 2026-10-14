@@ -28,11 +28,14 @@ a { color: var(--primary); }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 600; text-decoration: none; }
 .live { width: 8px; height: 8px; border-radius: 50%; background: var(--error); }
 .live.on { background: var(--success); }
+.live.warn { background: var(--warning); }
 .tabs { display: flex; flex: 1; gap: 4px; min-width: 0; }
 .tabs button { background: none; border: 0; border-radius: 6px; padding: 10px 14px; color: var(--muted); font: inherit; cursor: pointer; }
 .tabs button:hover, .tabs .on { color: var(--text); background: var(--border); }
 .conn { font-size: 12px; color: var(--error); white-space: nowrap; }
 .conn.on { color: var(--success); }
+.conn.warn { color: var(--warning); }
+.old { opacity: .55; }
 
 .hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: clamp(24px, 5vw, 56px); align-items: center;
   min-height: calc(100vh - 56px); min-height: calc(100svh - 56px); padding-top: 32px; padding-bottom: 32px; }

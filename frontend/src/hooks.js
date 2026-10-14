@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { API_URL, MAX_POINTS, REDUCED } from "./config";
+import { API_URL, MAX_POINTS, REDUCED, RECONNECT_MAX_MS, RECONNECT_MIN_MS, STALE_FACTOR } from "./config";
+import { isSnapshot, toPoint } from "./data";
 import { applyTheme, loadTheme, saveTheme } from "./themes";
 
 // Mengetik teks karakter demi karakter setelah `go` bernilai true
@@ -26,32 +27,76 @@ export function useInView(ref, threshold = 0.12) {
   return seen;
 }
 
-// Menyambung ke /stream dan menyimpan pembacaan terakhir serta riwayatnya
+// Menyambung ke /stream. status: connecting | connected | reconnecting | stale
 export function useMetrics() {
   const [metrics, setMetrics] = useState(null);
   const [history, setHistory] = useState([]);
-  const [connected, setConnected] = useState(false);
+  const [status, setStatus] = useState("connecting");
   const [paused, setPausedState] = useState(false);
   const pausedRef = useRef(false);
 
   useEffect(() => {
-    const es = new EventSource(`${API_URL}/stream`);
-    es.onopen = () => setConnected(true);
-    es.onmessage = (e) => {
-      if (pausedRef.current) return;
-      const data = JSON.parse(e.data);
-      setMetrics(data);
-      setHistory((p) => [...p, { time: new Date().toLocaleTimeString("id-ID"), ...data }].slice(-MAX_POINTS));
+    let es = null;
+    let retry = null;
+    let delay = RECONNECT_MIN_MS;
+    let current = "connecting";
+    let lastEvent = Date.now();
+    let staleAfter = STALE_FACTOR * 2000;
+
+    const set = (next) => {
+      if (current === next) return;
+      current = next;
+      setStatus(next);
     };
-    es.onerror = () => setConnected(false);
-    return () => es.close();
+
+    const connect = () => {
+      const source = new EventSource(`${API_URL}/stream`);
+      es = source;
+      source.onopen = () => {
+        delay = RECONNECT_MIN_MS;
+        lastEvent = Date.now();
+        set("connected");
+      };
+      source.onmessage = (e) => {
+        lastEvent = Date.now(); // dihitung walau sedang dijeda, supaya tidak dianggap lama
+        let data;
+        try { data = JSON.parse(e.data); } catch { return; }
+        if (!isSnapshot(data)) return;
+        staleAfter = STALE_FACTOR * data.interval_s * 1000;
+        set("connected");
+        if (pausedRef.current) return;
+        setMetrics(data);
+        setHistory((p) => [...p, toPoint(data)].slice(-MAX_POINTS));
+      };
+      source.onerror = () => {
+        set("reconnecting");
+        // CLOSED berarti browser menyerah (misalnya server membalas 503), jadi kita sambung ulang sendiri.
+        // CONNECTING berarti browser sedang mencoba lagi sendiri.
+        if (source.readyState === EventSource.CLOSED) {
+          source.close();
+          retry = setTimeout(connect, delay);
+          delay = Math.min(delay * 2, RECONNECT_MAX_MS);
+        }
+      };
+    };
+
+    connect();
+    const watchdog = setInterval(() => {
+      if (current === "connected" && Date.now() - lastEvent > staleAfter) set("stale");
+    }, 1000);
+
+    return () => {
+      clearTimeout(retry);
+      clearInterval(watchdog);
+      es.close();
+    };
   }, []);
 
   const setPaused = (v) => {
     pausedRef.current = v;
     setPausedState(v);
   };
-  return { metrics, history, setHistory, connected, paused, setPaused };
+  return { metrics, history, setHistory, status, paused, setPaused };
 }
 
 // Tema warna: terapkan ke variabel CSS dan simpan pilihannya

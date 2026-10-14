@@ -30,7 +30,7 @@ export default function About() {
         <div>
           <Line>cat quickstart.md</Line>
           <p className="dim">Backend, di folder api:</p>
-          <Cmds lines={["python3 -m venv venv", "source venv/bin/activate", 'pip install fastapi "uvicorn[standard]" psutil', "uvicorn main:app --reload"]} />
+          <Cmds lines={["python3 -m venv venv", "source venv/bin/activate", "pip install -r requirements.txt", "uvicorn main:app --reload"]} />
           <p className="dim">Frontend, di terminal lain:</p>
           <Cmds lines={["npm install", "npm run dev"]} />
           <p className="dim">Lalu buka localhost:5173.</p>

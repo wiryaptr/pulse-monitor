@@ -1,10 +1,10 @@
-import { PENS, bar, level } from "../data";
+import { PENS, bar, fmtTime, fmtUptime, level } from "../data";
 
-export default function StatusView({ metrics }) {
+export default function StatusView({ metrics, stale = false }) {
   return (
-    <div className="blk">
-      {PENS.map(({ key, label }) => {
-        const v = metrics ? metrics[key] : 0;
+    <div className={`blk${stale ? " old" : ""}`}>
+      {PENS.map(({ key, label, pick }) => {
+        const v = metrics ? pick(metrics) : 0;
         const [word, cls] = level(v);
         return (
           <div key={key}>
@@ -15,6 +15,11 @@ export default function StatusView({ metrics }) {
           </div>
         );
       })}
+      {metrics && (
+        <div className="dim">
+          {metrics.host.hostname} · aktif {fmtUptime(metrics.host.uptime_s)} · data {fmtTime(metrics.ts)}{stale ? " · lama" : ""}
+        </div>
+      )}
     </div>
   );
 }

@@ -9,14 +9,16 @@ Dashboard untuk memantau CPU, RAM, dan disk server secara langsung dari browser.
 - Satu loop sampling bersama di API, jadi biaya baca metrik tidak naik per penonton.
 - Jumlah koneksi `/stream` dibatasi (`MAX_STREAMS`) supaya aman kalau dibuka publik.
 - Riwayat 60 pembacaan terakhir disimpan di memori browser, tanpa database.
+- Sampler tidak mati kalau satu pembacaan gagal: errornya dicatat di log, data lama dipertahankan, dan `/health` berubah menjadi 503 kalau data sudah basi.
+- Frontend menampilkan status koneksi (terhubung, menyambung ulang, data lama) dan menyambung ulang sendiri dengan jeda bertahap, termasuk saat server menolak koneksi (503).
 - Di dalam container, nilai disk yang terbaca milik container, bukan milik host.
 
 ## Struktur
 
-    api/        FastAPI (main.py) dan tes (tests/)
+    api/        FastAPI (main.py) dan tes (tests/: endpoint, sampler, SSE)
     frontend/   Vite + React 19 + Recharts
       src/components/   Terminal, StatusView, About, dll
-      src/hooks.js      useMetrics, useTyper, useTheme, dll
+      src/hooks.js      useMetrics, useTyper, useTheme, dll (tesnya: hooks.test.js)
       src/themes.js     13 tema warna
 
 ## Menjalankan (pengembangan)
@@ -40,21 +42,34 @@ Buka `http://localhost:5173`.
 | Variabel | Dipakai di | Bawaan | Keterangan |
 |---|---|---|---|
 | `ALLOWED_ORIGINS` | API | `http://localhost:5173,http://127.0.0.1:5173` | Asal yang boleh mengakses API (pisahkan dengan koma) |
-| `MAX_STREAMS` | API | `20` | Batas koneksi `/stream` bersamaan |
+| `MAX_STREAMS` | API | `20` | Batas koneksi `/stream` bersamaan (minimal 1) |
+| `PULSE_INTERVAL` | API | `2.0` | Detik antar pembacaan (minimal 0.5). Nilai yang salah membuat API menolak start |
 | `VITE_API_URL` | Frontend (saat build) | `http://127.0.0.1:8000` | Alamat API, misalnya `/api` di belakang nginx |
 
 ## Tes dan lint
 
     cd api && pytest
     cd frontend && npm run lint
+    cd frontend && npm test
 
 ## Endpoint
 
 | Endpoint | Isi |
 |---|---|
-| `GET /health` | Cek hidup |
-| `GET /metrics` | Satu pembacaan terakhir (`cpu`, `ram`, `disk`) |
-| `GET /stream` | Aliran SSE, satu event tiap 2 detik |
+| `GET /health` | `200` kalau sampler masih menghasilkan data baru, `503` kalau data basi (lebih dari 3x interval) atau belum ada |
+| `GET /metrics` | Satu pembacaan terakhir (bentuk di bawah), `503` kalau belum ada |
+| `GET /stream` | Aliran SSE, satu event per pembacaan dengan bentuk yang sama dengan `/metrics`. `503` kalau koneksi penuh |
+
+Bentuk data (`/metrics` dan tiap event `/stream`):
+
+    {
+      "ts": "2026-10-14T00:03:49Z",     UTC, dibuat server saat membaca
+      "interval_s": 2.0,                jeda antar pembacaan
+      "host": { "hostname": "vm", "uptime_s": 411 },
+      "cpu":    { "percent": 0.0 },     semua persen 0 sampai 100
+      "memory": { "percent": 8.2 },
+      "disk":   { "mount": "/", "percent": 48.9 }
+    }
 
 ## Rencana
 

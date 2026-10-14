@@ -5,17 +5,18 @@ import Reveal from "./components/Reveal";
 import { Rows } from "./components/Rows";
 import Terminal from "./components/Terminal";
 import { REDUCED, REPO } from "./config";
-import { FEATURES } from "./data";
+import { FEATURES, STATUS } from "./data";
 import { useActiveSection, useMetrics, useTheme, useTyper } from "./hooks";
 import "./App.css";
 
 const SECTIONS = ["home", "about"];
 
 export default function App() {
-  const { metrics, history, setHistory, connected, paused, setPaused } = useMetrics();
+  const { metrics, history, setHistory, status, paused, setPaused } = useMetrics();
   const [theme, setTheme] = useTheme();
   const [active, setActive] = useActiveSection(SECTIONS);
   const [cmd, cmdDone] = useTyper("pulse watch", true);
+  const [statusText, tone] = STATUS[status];
 
   const go = (id) => {
     if (SECTIONS.includes(id)) setActive(id);
@@ -26,14 +27,14 @@ export default function App() {
     <>
       <nav className="bar">
         <a className="brand" href="#home" onClick={(e) => { e.preventDefault(); go("home"); }}>
-          <span className={`live ${connected ? "on" : ""}`} />pulse
+          <span className={`live ${tone}`} />pulse
         </a>
         <div className="tabs">
           {SECTIONS.map((id) => (
             <button key={id} className={active === id ? "on" : ""} onClick={() => go(id)}>{id}</button>
           ))}
         </div>
-        <span className={`conn ${connected ? "on" : ""}`}>{connected ? "terhubung" : "terputus"}</span>
+        <span className={`conn ${tone}`}>{statusText}</span>
       </nav>
 
       <main className="page">
@@ -55,7 +56,7 @@ export default function App() {
             </div>
             <Terminal
               metrics={metrics} history={history} setHistory={setHistory}
-              connected={connected} paused={paused} setPaused={setPaused}
+              status={status} paused={paused} setPaused={setPaused}
               theme={theme} setTheme={setTheme} go={go}
             />
           </header>

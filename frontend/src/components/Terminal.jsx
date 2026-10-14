@@ -1,23 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { API_URL } from "../config";
-import { HELP } from "../data";
+import { HELP, STATUS, fmtTime } from "../data";
 import { THEME_NAMES, palette } from "../themes";
 import { Line, Ps } from "./Prompt";
 import StatusView from "./StatusView";
 
-export default function Terminal({ metrics, history, setHistory, connected, paused, setPaused, theme, setTheme, go }) {
+export default function Terminal({ metrics, history, setHistory, status, paused, setPaused, theme, setTheme, go }) {
   const [log, setLog] = useState([]);
   const [input, setInput] = useState("");
   const past = useRef([]);
   const pos = useRef(0);
   const bodyRef = useRef(null);
+  const stale = !!metrics && status !== "connected";
 
   useEffect(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
   }, [log]);
 
   const exportCSV = () => {
-    const rows = ["time,cpu,ram,disk", ...history.map((h) => `${h.time},${h.cpu},${h.ram},${h.disk}`)];
+    const rows = ["ts,cpu,ram,disk", ...history.map((h) => `${h.ts},${h.cpu},${h.ram},${h.disk}`)];
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([rows.join("\n")], { type: "text/csv" }));
     a.download = "pulse-metrics.csv";
@@ -38,7 +39,7 @@ export default function Terminal({ metrics, history, setHistory, connected, paus
         res = <div className="blk">{HELP.map(([k, d]) => <div key={k}><span className="ok">{k.padEnd(9)}</span><span className="dim">{d}</span></div>)}</div>;
         break;
       case "status":
-        res = metrics ? <StatusView metrics={metrics} /> : <div className="bad">belum ada data</div>;
+        res = metrics ? <StatusView metrics={metrics} stale={stale} /> : <div className="bad">belum ada data</div>;
         break;
       case "graph":
         go("grafik");
@@ -111,13 +112,14 @@ export default function Terminal({ metrics, history, setHistory, connected, paus
   return (
     <div className="termcard">
       <div className="termhead">
-        <span>pulse-monitor</span>
-        <span>{paused ? "dijeda" : connected ? "live" : "terputus"}</span>
+        <span>pulse-monitor{metrics ? ` · ${metrics.host.hostname}` : ""}</span>
+        <span>{paused ? "dijeda" : status === "connected" ? "live" : STATUS[status][0]}</span>
       </div>
       <div className="termbody" ref={bodyRef}>
         <div><Ps />pulse status --watch</div>
-        <StatusView metrics={metrics} />
-        {!connected && <div className="bad">error: tidak bisa konek ke {API_URL}. Jalankan uvicorn di folder api.</div>}
+        <StatusView metrics={metrics} stale={stale} />
+        {status === "reconnecting" && <div className="bad">error: koneksi ke {API_URL} terputus, mencoba lagi. Pastikan uvicorn di folder api berjalan.</div>}
+        {status === "stale" && metrics && <div className="warn">peringatan: tidak ada data baru sejak {fmtTime(metrics.ts)}</div>}
         <div aria-live="polite">
           {log.map(({ id, text, res }) => <div key={id}><Line>{text}</Line>{res}</div>)}
         </div>
