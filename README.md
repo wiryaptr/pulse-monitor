@@ -1,5 +1,7 @@
 # Pulse Monitor
 
+[![CI](https://github.com/wiryaptr/pulse-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/wiryaptr/pulse-monitor/actions/workflows/ci.yml)
+
 Dashboard untuk memantau CPU, RAM, dan disk server secara langsung dari browser. API Python membaca metrik dengan psutil, FastAPI menyiarkannya lewat SSE, dan React menampilkannya sebagai bar teks, grafik garis, dan terminal yang bisa diketik.
 
 ## Cara kerja
@@ -52,6 +54,8 @@ Buka `http://localhost:5173`.
     cd frontend && npm run lint
     cd frontend && npm test
 
+Semua pemeriksaan di atas, ditambah `npm run build`, juga jalan otomatis di GitHub Actions (`.github/workflows/ci.yml`) pada setiap push ke `main` dan setiap pull request: backend di Python 3.14, frontend di Node 22.22.2.
+
 ## Endpoint
 
 | Endpoint | Isi |
@@ -74,6 +78,6 @@ Bentuk data (`/metrics` dan tiap event `/stream`):
 ## Rencana
 
 - Container (Podman) dan `compose`
-- GitHub Actions: lint, tes, build
+- Pemindaian dependensi dan image container di CI
 - Deploy ke VPS dengan HTTPS (Caddy)
 - Alert Telegram saat CPU tinggi
