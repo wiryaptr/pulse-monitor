@@ -13,12 +13,13 @@ Dashboard untuk memantau CPU, RAM, dan disk server secara langsung dari browser.
 - Riwayat 60 pembacaan terakhir disimpan di memori browser, tanpa database.
 - Sampler tidak mati kalau satu pembacaan gagal: errornya dicatat di log, data lama dipertahankan, dan `/health` berubah menjadi 503 kalau data sudah basi.
 - Frontend menampilkan status koneksi (terhubung, menyambung ulang, data lama) dan menyambung ulang sendiri dengan jeda bertahap, termasuk saat server menolak koneksi (503).
-- Di dalam container, nilai disk yang terbaca milik container, bukan milik host.
+- psutil membaca lingkungan tempat prosesnya berjalan, jadi angka dari dalam container bisa berbeda dari host (lihat bagian Container).
 
 ## Struktur
 
-    api/        FastAPI (main.py) dan tes (tests/: endpoint, sampler, SSE)
-    frontend/   Vite + React 19 + Recharts
+    api/        FastAPI (main.py), tes (tests/: endpoint, sampler, SSE), Containerfile
+    frontend/   Vite + React 19 + Recharts, Containerfile, Caddyfile
+    scripts/    smoke-containers.sh (build dan uji container)
       src/components/   Terminal, StatusView, About, dll
       src/hooks.js      useMetrics, useTyper, useTheme, dll (tesnya: hooks.test.js)
       src/themes.js     13 tema warna
@@ -39,6 +40,28 @@ Frontend, di terminal lain, di folder `frontend`:
 
 Buka `http://localhost:5173`.
 
+## Container (Podman atau Docker)
+
+Dua image: `api/Containerfile` (FastAPI, jalan sebagai user non-root, ada healthcheck) dan `frontend/Containerfile` (hasil build Vite disajikan Caddy di port 8080, `/api` diteruskan ke container API).
+
+Cara cepat untuk membangun, menjalankan, dan menguji semuanya:
+
+    ENGINE=podman ./scripts/smoke-containers.sh
+
+Tambahkan `KEEP=1` supaya container tetap hidup, lalu buka `http://localhost:8080`. Podman membuat image berformat OCI secara bawaan dan mengabaikan HEALTHCHECK, jadi build memakai `--format docker` (skrip sudah menambahkannya).
+
+Manual:
+
+    podman build --format docker -f api/Containerfile -t pulse-api api
+    podman build --format docker -f frontend/Containerfile -t pulse-web frontend
+    podman network create pulse
+    podman run -d --name api --network pulse --network-alias api --read-only pulse-api
+    podman run -d --name web --network pulse -p 8080:8080 --read-only --tmpfs /tmp pulse-web
+
+Pengaturan image web: variabel `API_UPSTREAM` (bawaan `api:8000`) dan argumen build `VITE_API_URL` (bawaan `/api`).
+
+Keterbatasan metrik: psutil membaca lingkungan tempat prosesnya berjalan, jadi angka dari dalam container tidak selalu sama dengan host (misalnya disk `/` dan antarmuka jaringan). Skrip smoke mencetak perbandingan pembacaan psutil di container dengan host supaya perbedaannya terlihat di mesin Anda.
+
 ## Konfigurasi
 
 | Variabel | Dipakai di | Bawaan | Keterangan |
@@ -54,7 +77,7 @@ Buka `http://localhost:5173`.
     cd frontend && npm run lint
     cd frontend && npm test
 
-Semua pemeriksaan di atas, ditambah `npm run build`, juga jalan otomatis di GitHub Actions (`.github/workflows/ci.yml`) pada setiap push ke `main` dan setiap pull request: backend di Python 3.14, frontend di Node 22.22.2.
+Semua pemeriksaan di atas, ditambah `npm run build` dan smoke test container, juga jalan otomatis di GitHub Actions (`.github/workflows/ci.yml`) pada setiap push ke `main` dan setiap pull request: backend di Python 3.14, frontend di Node 22.22.2.
 
 ## Endpoint
 
@@ -77,7 +100,7 @@ Bentuk data (`/metrics` dan tiap event `/stream`):
 
 ## Rencana
 
-- Container (Podman) dan `compose`
+- `compose` untuk menjalankan api dan web sekaligus
 - Pemindaian dependensi dan image container di CI
 - Deploy ke VPS dengan HTTPS (Caddy)
 - Alert Telegram saat CPU tinggi

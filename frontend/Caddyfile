@@ -1,0 +1,33 @@
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:8080 {
+	root * /srv
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		-Server
+	}
+
+	# /api/xxx diteruskan ke backend sebagai /xxx. Alamat backend bisa diganti lewat API_UPSTREAM.
+	# Caddy sudah otomatis mem-flush text/event-stream (diuji); flush_interval -1 hanya membuatnya eksplisit.
+	handle_path /api/* {
+		reverse_proxy {$API_UPSTREAM:api:8000} {
+			flush_interval -1
+		}
+	}
+
+	handle {
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@html path / /index.html
+		header @html Cache-Control "no-cache"
+		file_server
+	}
+}
