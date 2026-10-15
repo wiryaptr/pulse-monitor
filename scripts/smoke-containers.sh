@@ -98,13 +98,13 @@ import psutil, time
 vm, du = psutil.virtual_memory(), psutil.disk_usage("/")
 print(f"container  RAM total  : {vm.total / 2**30:.2f} GiB")
 print(f"container  disk /     : total {du.total / 2**30:.1f} GiB, terpakai {du.percent}%")
-print(f"container  uptime     : {(time.time() - psutil.boot_time()) / 3600:.1f} jam")
+print(f"container  uptime     : {(time.time() - psutil.boot_time()) / 60:.1f} menit")
 print(f"container  CPU core   : {psutil.cpu_count()}")
 print("container  antarmuka  :", " ".join(sorted(psutil.net_if_addrs())))
 PY
   awk '/MemTotal/ {printf "host       RAM total  : %.2f GiB\n", $2 / 1048576}' /proc/meminfo
   df -P / | awk 'NR==2 {printf "host       disk /     : total %.1f GiB, terpakai %s\n", $2 / 1048576, $5}'
-  awk '{printf "host       uptime     : %.1f jam\n", $1 / 3600}' /proc/uptime
+  awk '{printf "host       uptime     : %.1f menit\n", $1 / 60}' /proc/uptime
   printf 'host       CPU core   : %s\n' "$(nproc)"
   printf 'host       antarmuka  : %s\n' "$(find /sys/class/net -mindepth 1 -maxdepth 1 -printf '%f ')"
 }

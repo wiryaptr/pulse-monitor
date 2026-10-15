@@ -1,0 +1,65 @@
+# Menjalankan Pulse Monitor: api (FastAPI) dan web (Caddy + frontend).
+#
+#   podman compose up -d --build        (atau: docker compose up -d --build)
+#   buka http://localhost:8080
+#   podman compose ps                   status dan healthcheck
+#   podman compose logs -f api          log
+#   podman compose down                 hentikan dan hapus container
+#
+# Hanya web yang membuka port. API hanya terjangkau dari jaringan compose, lewat /api di web.
+# Nilai bawaan bisa diubah lewat file .env (contoh: .env.example).
+name: pulse-monitor
+
+services:
+  api:
+    build:
+      context: ./api
+      dockerfile: Containerfile
+    image: pulse-api:local
+    restart: unless-stopped
+    environment:
+      PULSE_INTERVAL: ${PULSE_INTERVAL:-2.0}
+      MAX_STREAMS: ${MAX_STREAMS:-20}
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Didefinisikan di sini juga karena Podman mengabaikan HEALTHCHECK di image berformat OCI.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Containerfile
+      args:
+        VITE_API_URL: /api
+    image: pulse-web:local
+    restart: unless-stopped
+    # Bawaan hanya bisa dibuka dari mesin ini. Dashboard belum punya autentikasi, jadi jangan
+    # ganti WEB_BIND ke 0.0.0.0 sebelum ada autentikasi atau VPN di depannya.
+    ports:
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8080}:8080"
+    # Hanya urutan start. Kalau api belum siap, Caddy membalas 502 sebentar dan frontend menyambung ulang sendiri.
+    depends_on:
+      - api
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 15s
+      timeout: 5s
+      start_period: 5s
+      retries: 3

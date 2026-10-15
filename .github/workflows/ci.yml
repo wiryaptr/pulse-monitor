@@ -76,3 +76,27 @@ jobs:
           persist-credentials: false
       - name: Build image, jalankan, dan uji lewat HTTP
         run: bash scripts/smoke-containers.sh
+
+  compose:
+    name: Compose (up dan smoke test)
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validasi compose.yaml
+        run: docker compose config --quiet
+      - name: Bangun dan jalankan, tunggu sampai healthy
+        run: docker compose up -d --build --wait --wait-timeout 120
+      - name: Uji lewat HTTP
+        run: bash scripts/smoke-containers.sh --check-only http://127.0.0.1:8080
+      - name: Status dan log (hanya bila gagal)
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --tail 50
+      - name: Matikan
+        if: always()
+        run: docker compose down -v

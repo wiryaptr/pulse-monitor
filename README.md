@@ -13,16 +13,18 @@ Dashboard untuk memantau CPU, RAM, dan disk server secara langsung dari browser.
 - Riwayat 60 pembacaan terakhir disimpan di memori browser, tanpa database.
 - Sampler tidak mati kalau satu pembacaan gagal: errornya dicatat di log, data lama dipertahankan, dan `/health` berubah menjadi 503 kalau data sudah basi.
 - Frontend menampilkan status koneksi (terhubung, menyambung ulang, data lama) dan menyambung ulang sendiri dengan jeda bertahap, termasuk saat server menolak koneksi (503).
-- psutil membaca lingkungan tempat prosesnya berjalan, jadi angka dari dalam container bisa berbeda dari host (lihat bagian Container).
+- psutil membaca lingkungan tempat prosesnya berjalan, jadi angka dari dalam container bisa berbeda dari host (lihat Keterbatasan metrik di container).
 
 ## Struktur
 
     api/        FastAPI (main.py), tes (tests/: endpoint, sampler, SSE), Containerfile
     frontend/   Vite + React 19 + Recharts, Containerfile, Caddyfile
-    scripts/    smoke-containers.sh (build dan uji container)
       src/components/   Terminal, StatusView, About, dll
       src/hooks.js      useMetrics, useTyper, useTheme, dll (tesnya: hooks.test.js)
       src/themes.js     13 tema warna
+    scripts/    smoke-containers.sh (build dan uji container)
+    compose.yaml, .env.example   menjalankan api dan web sekaligus
+    .github/workflows/ci.yml     CI
 
 ## Menjalankan (pengembangan)
 
@@ -39,6 +41,20 @@ Frontend, di terminal lain, di folder `frontend`:
     npm run dev
 
 Buka `http://localhost:5173`.
+
+## Menjalankan dengan compose
+
+Cara paling singkat untuk menyalakan api dan web sekaligus:
+
+    podman compose up -d --build
+
+(atau `docker compose up -d --build`). Buka `http://localhost:8080`. Perintah lain:
+
+    podman compose ps
+    podman compose logs -f api
+    podman compose down
+
+Hanya web yang membuka port, dan secara bawaan hanya dari mesin ini (`127.0.0.1`), karena dashboard belum punya autentikasi. API hanya terjangkau lewat `/api` di web. Untuk mengubah port, interval, dan lainnya, salin `.env.example` menjadi `.env`. Healthcheck didefinisikan di `compose.yaml` karena Podman mengabaikan `HEALTHCHECK` di image berformat OCI.
 
 ## Container (Podman atau Docker)
 
@@ -60,7 +76,18 @@ Manual:
 
 Pengaturan image web: variabel `API_UPSTREAM` (bawaan `api:8000`) dan argumen build `VITE_API_URL` (bawaan `/api`).
 
-Keterbatasan metrik: psutil membaca lingkungan tempat prosesnya berjalan, jadi angka dari dalam container tidak selalu sama dengan host (misalnya disk `/` dan antarmuka jaringan). Skrip smoke mencetak perbandingan pembacaan psutil di container dengan host supaya perbedaannya terlihat di mesin Anda.
+### Keterbatasan metrik di container
+
+psutil membaca lingkungan tempat prosesnya berjalan. Contoh hasil `scripts/smoke-containers.sh` di Fedora dengan Podman rootless (skrip yang sama mencetak perbandingan ini di mesin Anda):
+
+| Metrik | Dari dalam container | Host |
+|---|---|---|
+| RAM total | 15.30 GiB | 15.30 GiB |
+| Jumlah core CPU | 12 | 12 |
+| Disk `/` | 58.1 GiB, terpakai 29.6% | 58.1 GiB, terpakai 30% |
+| Antarmuka jaringan | `eth0`, `lo` | `lo`, `wlp2s0` |
+
+Artinya: CPU, RAM, dan uptime adalah pembacaan host (kernel dipakai bersama). Disk `/` adalah filesystem tempat penyimpanan container berada; di mesin contoh itu kebetulan sama dengan `/` host, tetapi bisa berbeda bila penyimpanan container ada di partisi lain. Jaringan hanya menampilkan antarmuka milik container, jadi trafik host tidak terlihat. Belum diuji: `network_mode: host` untuk melihat antarmuka host, dan apakah batas memori atau CPU container (cgroup) tercermin di pembacaan.
 
 ## Konfigurasi
 
@@ -69,7 +96,8 @@ Keterbatasan metrik: psutil membaca lingkungan tempat prosesnya berjalan, jadi a
 | `ALLOWED_ORIGINS` | API | `http://localhost:5173,http://127.0.0.1:5173` | Asal yang boleh mengakses API (pisahkan dengan koma) |
 | `MAX_STREAMS` | API | `20` | Batas koneksi `/stream` bersamaan (minimal 1) |
 | `PULSE_INTERVAL` | API | `2.0` | Detik antar pembacaan (minimal 0.5). Nilai yang salah membuat API menolak start |
-| `VITE_API_URL` | Frontend (saat build) | `http://127.0.0.1:8000` | Alamat API, misalnya `/api` di belakang nginx |
+| `VITE_API_URL` | Frontend (saat build) | `http://127.0.0.1:8000` | Alamat API. Image web memakai `/api` (lewat proxy Caddy) |
+| `WEB_BIND`, `WEB_PORT` | compose (`.env`) | `127.0.0.1`, `8080` | Alamat dan port web di host. Jangan ganti `WEB_BIND` ke `0.0.0.0` sebelum ada autentikasi |
 
 ## Tes dan lint
 
@@ -77,7 +105,7 @@ Keterbatasan metrik: psutil membaca lingkungan tempat prosesnya berjalan, jadi a
     cd frontend && npm run lint
     cd frontend && npm test
 
-Semua pemeriksaan di atas, ditambah `npm run build` dan smoke test container, juga jalan otomatis di GitHub Actions (`.github/workflows/ci.yml`) pada setiap push ke `main` dan setiap pull request: backend di Python 3.14, frontend di Node 22.22.2.
+Semua pemeriksaan di atas, ditambah `npm run build`, smoke test container, dan uji `docker compose up`, juga jalan otomatis di GitHub Actions (`.github/workflows/ci.yml`) pada setiap push ke `main` dan setiap pull request: backend di Python 3.14, frontend di Node 22.22.2.
 
 ## Endpoint
 
@@ -100,7 +128,6 @@ Bentuk data (`/metrics` dan tiap event `/stream`):
 
 ## Rencana
 
-- `compose` untuk menjalankan api dan web sekaligus
 - Pemindaian dependensi dan image container di CI
 - Deploy ke VPS dengan HTTPS (Caddy)
 - Alert Telegram saat CPU tinggi
