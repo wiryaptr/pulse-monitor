@@ -1,0 +1,4 @@
+# Temuan yang sengaja diterima. Satu ID per baris, wajib dengan alasan dan tanggal tinjau ulang.
+# Contoh:
+#   CVE-2026-00000   # alasan singkat, tinjau ulang 2026-12-01
+# Dibiarkan kosong: tidak ada temuan yang diterima saat ini.

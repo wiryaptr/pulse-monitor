@@ -1,6 +1,7 @@
 # Pulse Monitor
 
 [![CI](https://github.com/wiryaptr/pulse-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/wiryaptr/pulse-monitor/actions/workflows/ci.yml)
+[![Security](https://github.com/wiryaptr/pulse-monitor/actions/workflows/security.yml/badge.svg)](https://github.com/wiryaptr/pulse-monitor/actions/workflows/security.yml)
 
 Dashboard untuk memantau CPU, RAM, dan disk server secara langsung dari browser. API Python membaca metrik dengan psutil, FastAPI menyiarkannya lewat SSE, dan React menampilkannya sebagai bar teks, grafik garis, dan terminal yang bisa diketik.
 
@@ -17,14 +18,15 @@ Dashboard untuk memantau CPU, RAM, dan disk server secara langsung dari browser.
 
 ## Struktur
 
-    api/        FastAPI (main.py), tes (tests/: endpoint, sampler, SSE), Containerfile
-    frontend/   Vite + React 19 + Recharts, Containerfile, Caddyfile
+    api/        FastAPI (main.py), tes (tests/: endpoint, sampler, SSE), Dockerfile
+    frontend/   Vite + React 19 + Recharts, Dockerfile, Caddyfile
       src/components/   Terminal, StatusView, About, dll
       src/hooks.js      useMetrics, useTyper, useTheme, dll (tesnya: hooks.test.js)
       src/themes.js     13 tema warna
-    scripts/    smoke-containers.sh (build dan uji container)
+    scripts/    smoke-containers.sh (build dan uji container), install-trivy.sh
     compose.yaml, .env.example   menjalankan api dan web sekaligus
-    .github/workflows/ci.yml     CI
+    .github/workflows/          ci.yml (tes), security.yml (pemindaian), publish.yml (rilis ke GHCR)
+    .github/dependabot.yml      pembaruan dependensi otomatis
 
 ## Menjalankan (pengembangan)
 
@@ -58,7 +60,7 @@ Hanya web yang membuka port, dan secara bawaan hanya dari mesin ini (`127.0.0.1`
 
 ## Container (Podman atau Docker)
 
-Dua image: `api/Containerfile` (FastAPI, jalan sebagai user non-root, ada healthcheck) dan `frontend/Containerfile` (hasil build Vite disajikan Caddy di port 8080, `/api` diteruskan ke container API).
+Dua image: `api/Dockerfile` (FastAPI, jalan sebagai user non-root, ada healthcheck) dan `frontend/Dockerfile` (hasil build Vite disajikan Caddy di port 8080, `/api` diteruskan ke container API).
 
 Cara cepat untuk membangun, menjalankan, dan menguji semuanya:
 
@@ -68,8 +70,8 @@ Tambahkan `KEEP=1` supaya container tetap hidup, lalu buka `http://localhost:808
 
 Manual:
 
-    podman build --format docker -f api/Containerfile -t pulse-api api
-    podman build --format docker -f frontend/Containerfile -t pulse-web frontend
+    podman build --format docker -f api/Dockerfile -t pulse-api api
+    podman build --format docker -f frontend/Dockerfile -t pulse-web frontend
     podman network create pulse
     podman run -d --name api --network pulse --network-alias api --read-only pulse-api
     podman run -d --name web --network pulse -p 8080:8080 --read-only --tmpfs /tmp pulse-web
@@ -107,6 +109,27 @@ Artinya: CPU, RAM, dan uptime adalah pembacaan host (kernel dipakai bersama). Di
 
 Semua pemeriksaan di atas, ditambah `npm run build`, smoke test container, dan uji `docker compose up`, juga jalan otomatis di GitHub Actions (`.github/workflows/ci.yml`) pada setiap push ke `main` dan setiap pull request: backend di Python 3.14, frontend di Node 22.22.2.
 
+## Keamanan dan rilis
+
+**Pemindaian** (`security.yml`, jalan di setiap push ke `main`, setiap pull request, dan tiap Senin pagi supaya kerentanan baru tertangkap walau kode tidak berubah):
+
+- `pip-audit` untuk dependensi Python dan `npm audit` untuk dependensi npm (gagal bila ada temuan HIGH atau CRITICAL).
+- Trivy untuk konfigurasi Dockerfile dan untuk kedua image (HIGH dan CRITICAL yang sudah punya perbaikan).
+- Semua job pemindaian hanya punya izin `contents: read` dan tidak memakai secret.
+
+**Rantai pasokan:**
+
+- Base image di Dockerfile dikunci ke digest, dan Dependabot memperbarui tag beserta digest-nya tiap pekan. Dependabot juga memperbarui dependensi pip, npm, dan GitHub Actions. Rilis baru menunggu 7 hari (`cooldown`) sebelum diusulkan, supaya versi yang tercemar punya waktu terdeteksi.
+- Semua GitHub Action di-pin ke SHA commit.
+- Trivy dipasang dari binary yang dikunci ke versi dan sha256 (`scripts/install-trivy.sh`), bukan lewat `trivy-action`. Alasannya: pada Maret 2026 rantai pasokan Trivy dibobol (CVE-2026-33634), dan versi yang dinyatakan aman oleh advisory resminya adalah v0.69.3 ke bawah. Versi baru baru dipakai setelah diperiksa sendiri.
+
+**Rilis ke GHCR** (`publish.yml`): membuat tag `v*.*.*` menjalankan pemindaian lalu mendorong dua image ke `ghcr.io/wiryaptr/pulse-api` dan `ghcr.io/wiryaptr/pulse-web` (tag versi, dan `latest` untuk rilis stabil). Izin menulis paket hanya ada di job pendorong, yang tidak menjalankan scanner.
+
+    git tag v0.1.0
+    git push origin v0.1.0
+
+Untuk mencoba build tanpa mendorong apa pun: tab Actions, workflow Publish, Run workflow, biarkan opsi publish mati.
+
 ## Endpoint
 
 | Endpoint | Isi |
@@ -128,6 +151,5 @@ Bentuk data (`/metrics` dan tiap event `/stream`):
 
 ## Rencana
 
-- Pemindaian dependensi dan image container di CI
 - Deploy ke VPS dengan HTTPS (Caddy)
 - Alert Telegram saat CPU tinggi

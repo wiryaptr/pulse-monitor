@@ -1,4 +1,7 @@
-FROM docker.io/library/python:3.14-slim
+FROM docker.io/library/python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
+
+LABEL org.opencontainers.image.source="https://github.com/wiryaptr/pulse-monitor" \
+      org.opencontainers.image.description="Pulse Monitor API (FastAPI)"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

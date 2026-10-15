@@ -1,0 +1,538 @@
+diff --git a/.github/dependabot.yml b/.github/dependabot.yml
+new file mode 100644
+index 0000000..0fd3be0
+--- /dev/null
++++ b/.github/dependabot.yml
+@@ -0,0 +1,63 @@
++# Pembaruan dependensi otomatis. Rilis baru menunggu 7 hari (cooldown) supaya versi yang tercemar
++# punya waktu untuk terdeteksi sebelum masuk repositori. Pembaruan keamanan tidak ikut ditunda.
++version: 2
++updates:
++  - package-ecosystem: github-actions
++    directory: /
++    schedule:
++      interval: weekly
++      day: monday
++    cooldown:
++      default-days: 7
++    commit-message:
++      prefix: "chore(ci)"
++    groups:
++      actions:
++        patterns: ["*"]
++
++  - package-ecosystem: pip
++    directory: /api
++    schedule:
++      interval: weekly
++      day: monday
++    cooldown:
++      default-days: 7
++    commit-message:
++      prefix: "chore(api)"
++    groups:
++      python-minor-patch:
++        update-types: ["minor", "patch"]
++
++  - package-ecosystem: npm
++    directory: /frontend
++    schedule:
++      interval: weekly
++      day: monday
++    cooldown:
++      default-days: 7
++    commit-message:
++      prefix: "chore(web)"
++    groups:
++      npm-minor-patch:
++        update-types: ["minor", "patch"]
++
++  # Base image di Dockerfile (tag dan digest diperbarui bersama)
++  - package-ecosystem: docker
++    directory: /api
++    schedule:
++      interval: weekly
++      day: monday
++    cooldown:
++      default-days: 7
++    commit-message:
++      prefix: "chore(api)"
++
++  - package-ecosystem: docker
++    directory: /frontend
++    schedule:
++      interval: weekly
++      day: monday
++    cooldown:
++      default-days: 7
++    commit-message:
++      prefix: "chore(web)"
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 4c4fcb6..09fada6 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -30,7 +30,7 @@ jobs:
+           persist-credentials: false
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+         with:
+-          python-version: "3.14" # sama dengan api/Containerfile
++          python-version: "3.14" # sama dengan api/Dockerfile
+           cache: pip
+           cache-dependency-path: |
+             api/requirements.txt
+diff --git a/.github/workflows/publish.yml b/.github/workflows/publish.yml
+new file mode 100644
+index 0000000..e212d1d
+--- /dev/null
++++ b/.github/workflows/publish.yml
+@@ -0,0 +1,84 @@
++name: Publish
++
++on:
++  push:
++    tags: ["v*.*.*"]
++  workflow_dispatch:
++    inputs:
++      publish:
++        description: "Push ke GHCR. Biarkan mati untuk uji build saja"
++        type: boolean
++        default: false
++
++permissions:
++  contents: read
++
++jobs:
++  # Pemeriksaan keamanan jalan di job terpisah tanpa izin menulis paket
++  security:
++    name: Pemeriksaan keamanan
++    uses: ./.github/workflows/security.yml
++
++  images:
++    name: Build dan push image ke GHCR
++    needs: security
++    runs-on: ubuntu-latest
++    timeout-minutes: 20
++    # Izin menulis paket hanya ada di job ini, yang tidak menjalankan scanner apa pun
++    permissions:
++      contents: read
++      packages: write
++    env:
++      PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          persist-credentials: false
++
++      - name: Tentukan nama dan versi image
++        id: meta
++        env:
++          REF_TYPE: ${{ github.ref_type }}
++          REF_NAME: ${{ github.ref_name }}
++        run: |
++          owner="${GITHUB_REPOSITORY_OWNER,,}"
++          if [[ "$REF_TYPE" == "tag" ]]; then version="${REF_NAME#v}"; else version="dev-${GITHUB_SHA::7}"; fi
++          {
++            echo "api=ghcr.io/${owner}/pulse-api"
++            echo "web=ghcr.io/${owner}/pulse-web"
++            echo "version=${version}"
++          } >> "$GITHUB_OUTPUT"
++
++      - name: Build image
++        env:
++          API: ${{ steps.meta.outputs.api }}
++          WEB: ${{ steps.meta.outputs.web }}
++          VERSION: ${{ steps.meta.outputs.version }}
++        run: |
++          labels=(--label "org.opencontainers.image.revision=${GITHUB_SHA}" --label "org.opencontainers.image.version=${VERSION}")
++          docker build "${labels[@]}" -t "${API}:${VERSION}" api
++          docker build "${labels[@]}" -t "${WEB}:${VERSION}" frontend
++
++      - name: Login ke GHCR
++        if: env.PUBLISH == 'true'
++        env:
++          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
++
++      - name: Push image
++        if: env.PUBLISH == 'true'
++        env:
++          API: ${{ steps.meta.outputs.api }}
++          WEB: ${{ steps.meta.outputs.web }}
++          VERSION: ${{ steps.meta.outputs.version }}
++          REF_TYPE: ${{ github.ref_type }}
++        run: |
++          for image in "$API" "$WEB"; do
++            docker push "${image}:${VERSION}"
++            # tag latest hanya untuk rilis stabil (tanpa akhiran seperti -rc1)
++            if [[ "$REF_TYPE" == "tag" && "$VERSION" != *-* ]]; then
++              docker tag "${image}:${VERSION}" "${image}:latest"
++              docker push "${image}:latest"
++            fi
++            echo "- \`$(docker inspect --format '{{index .RepoDigests 0}}' "${image}:${VERSION}")\`" >> "$GITHUB_STEP_SUMMARY"
++          done
+diff --git a/.github/workflows/security.yml b/.github/workflows/security.yml
+new file mode 100644
+index 0000000..dfbc11b
+--- /dev/null
++++ b/.github/workflows/security.yml
+@@ -0,0 +1,87 @@
++name: Security
++
++on:
++  push:
++    branches: [main]
++  pull_request:
++  schedule:
++    - cron: "17 3 * * 1" # tiap Senin 03:17 UTC, menangkap kerentanan baru walau kode tidak berubah
++  workflow_dispatch:
++  workflow_call: # dipanggil oleh publish.yml sebelum image didorong
++
++# Semua job di sini hanya membaca kode dan tidak memakai secret. Scanner adalah komponen pihak ketiga,
++# jadi ia sengaja tidak diberi token yang bisa menulis apa pun.
++permissions:
++  contents: read
++
++# Semua action di-pin ke SHA commit (versi tertulis di komentar). Trivy dipasang lewat
++# scripts/install-trivy.sh (versi dan sha256 dikunci), bukan lewat action pihak ketiga.
++jobs:
++  python-deps:
++    name: Dependensi Python (pip-audit)
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    defaults:
++      run:
++        working-directory: api
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          persist-credentials: false
++      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
++        with:
++          python-version: "3.14"
++      - name: Pasang pip-audit
++        run: python -m pip install pip-audit==2.10.1
++      - name: Audit dependensi runtime dan dev
++        run: pip-audit -r requirements-dev.txt
++
++  node-deps:
++    name: Dependensi npm (npm audit)
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    defaults:
++      run:
++        working-directory: frontend
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          persist-credentials: false
++      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
++        with:
++          node-version: "22.22.2"
++      - name: Audit (gagal bila ada temuan HIGH atau CRITICAL)
++        run: npm audit --audit-level=high --package-lock-only
++
++  trivy-config:
++    name: Konfigurasi Dockerfile (Trivy)
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          persist-credentials: false
++      - name: Pasang Trivy (versi dan sha256 dikunci)
++        run: bash scripts/install-trivy.sh
++      - name: Pindai konfigurasi
++        run: trivy config --skip-version-check --severity HIGH,CRITICAL --exit-code 1 .
++
++  trivy-images:
++    name: Image container (Trivy)
++    runs-on: ubuntu-latest
++    timeout-minutes: 20
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          persist-credentials: false
++      - name: Pasang Trivy (versi dan sha256 dikunci)
++        run: bash scripts/install-trivy.sh
++      - name: Build image
++        run: |
++          docker build -t pulse-api:scan api
++          docker build -t pulse-web:scan frontend
++      - name: Pindai image (HIGH dan CRITICAL yang sudah punya perbaikan)
++        run: |
++          for image in pulse-api:scan pulse-web:scan; do
++            trivy image --skip-version-check --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$image"
++          done
+diff --git a/.trivyignore b/.trivyignore
+new file mode 100644
+index 0000000..53c4caf
+--- /dev/null
++++ b/.trivyignore
+@@ -0,0 +1,4 @@
++# Temuan yang sengaja diterima. Satu ID per baris, wajib dengan alasan dan tanggal tinjau ulang.
++# Contoh:
++#   CVE-2026-00000   # alasan singkat, tinjau ulang 2026-12-01
++# Dibiarkan kosong: tidak ada temuan yang diterima saat ini.
+diff --git a/README.md b/README.md
+index b60cfc8..d0db9f1 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,7 @@
+ # Pulse Monitor
+ 
+ [![CI](https://github.com/wiryaptr/pulse-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/wiryaptr/pulse-monitor/actions/workflows/ci.yml)
++[![Security](https://github.com/wiryaptr/pulse-monitor/actions/workflows/security.yml/badge.svg)](https://github.com/wiryaptr/pulse-monitor/actions/workflows/security.yml)
+ 
+ Dashboard untuk memantau CPU, RAM, dan disk server secara langsung dari browser. API Python membaca metrik dengan psutil, FastAPI menyiarkannya lewat SSE, dan React menampilkannya sebagai bar teks, grafik garis, dan terminal yang bisa diketik.
+ 
+@@ -17,14 +18,15 @@ Dashboard untuk memantau CPU, RAM, dan disk server secara langsung dari browser.
+ 
+ ## Struktur
+ 
+-    api/        FastAPI (main.py), tes (tests/: endpoint, sampler, SSE), Containerfile
+-    frontend/   Vite + React 19 + Recharts, Containerfile, Caddyfile
++    api/        FastAPI (main.py), tes (tests/: endpoint, sampler, SSE), Dockerfile
++    frontend/   Vite + React 19 + Recharts, Dockerfile, Caddyfile
+       src/components/   Terminal, StatusView, About, dll
+       src/hooks.js      useMetrics, useTyper, useTheme, dll (tesnya: hooks.test.js)
+       src/themes.js     13 tema warna
+-    scripts/    smoke-containers.sh (build dan uji container)
++    scripts/    smoke-containers.sh (build dan uji container), install-trivy.sh
+     compose.yaml, .env.example   menjalankan api dan web sekaligus
+-    .github/workflows/ci.yml     CI
++    .github/workflows/          ci.yml (tes), security.yml (pemindaian), publish.yml (rilis ke GHCR)
++    .github/dependabot.yml      pembaruan dependensi otomatis
+ 
+ ## Menjalankan (pengembangan)
+ 
+@@ -58,7 +60,7 @@ Hanya web yang membuka port, dan secara bawaan hanya dari mesin ini (`127.0.0.1`
+ 
+ ## Container (Podman atau Docker)
+ 
+-Dua image: `api/Containerfile` (FastAPI, jalan sebagai user non-root, ada healthcheck) dan `frontend/Containerfile` (hasil build Vite disajikan Caddy di port 8080, `/api` diteruskan ke container API).
++Dua image: `api/Dockerfile` (FastAPI, jalan sebagai user non-root, ada healthcheck) dan `frontend/Dockerfile` (hasil build Vite disajikan Caddy di port 8080, `/api` diteruskan ke container API).
+ 
+ Cara cepat untuk membangun, menjalankan, dan menguji semuanya:
+ 
+@@ -68,8 +70,8 @@ Tambahkan `KEEP=1` supaya container tetap hidup, lalu buka `http://localhost:808
+ 
+ Manual:
+ 
+-    podman build --format docker -f api/Containerfile -t pulse-api api
+-    podman build --format docker -f frontend/Containerfile -t pulse-web frontend
++    podman build --format docker -f api/Dockerfile -t pulse-api api
++    podman build --format docker -f frontend/Dockerfile -t pulse-web frontend
+     podman network create pulse
+     podman run -d --name api --network pulse --network-alias api --read-only pulse-api
+     podman run -d --name web --network pulse -p 8080:8080 --read-only --tmpfs /tmp pulse-web
+@@ -107,6 +109,27 @@ Artinya: CPU, RAM, dan uptime adalah pembacaan host (kernel dipakai bersama). Di
+ 
+ Semua pemeriksaan di atas, ditambah `npm run build`, smoke test container, dan uji `docker compose up`, juga jalan otomatis di GitHub Actions (`.github/workflows/ci.yml`) pada setiap push ke `main` dan setiap pull request: backend di Python 3.14, frontend di Node 22.22.2.
+ 
++## Keamanan dan rilis
++
++**Pemindaian** (`security.yml`, jalan di setiap push ke `main`, setiap pull request, dan tiap Senin pagi supaya kerentanan baru tertangkap walau kode tidak berubah):
++
++- `pip-audit` untuk dependensi Python dan `npm audit` untuk dependensi npm (gagal bila ada temuan HIGH atau CRITICAL).
++- Trivy untuk konfigurasi Dockerfile dan untuk kedua image (HIGH dan CRITICAL yang sudah punya perbaikan).
++- Semua job pemindaian hanya punya izin `contents: read` dan tidak memakai secret.
++
++**Rantai pasokan:**
++
++- Base image di Dockerfile dikunci ke digest, dan Dependabot memperbarui tag beserta digest-nya tiap pekan. Dependabot juga memperbarui dependensi pip, npm, dan GitHub Actions. Rilis baru menunggu 7 hari (`cooldown`) sebelum diusulkan, supaya versi yang tercemar punya waktu terdeteksi.
++- Semua GitHub Action di-pin ke SHA commit.
++- Trivy dipasang dari binary yang dikunci ke versi dan sha256 (`scripts/install-trivy.sh`), bukan lewat `trivy-action`. Alasannya: pada Maret 2026 rantai pasokan Trivy dibobol (CVE-2026-33634), dan versi yang dinyatakan aman oleh advisory resminya adalah v0.69.3 ke bawah. Versi baru baru dipakai setelah diperiksa sendiri.
++
++**Rilis ke GHCR** (`publish.yml`): membuat tag `v*.*.*` menjalankan pemindaian lalu mendorong dua image ke `ghcr.io/wiryaptr/pulse-api` dan `ghcr.io/wiryaptr/pulse-web` (tag versi, dan `latest` untuk rilis stabil). Izin menulis paket hanya ada di job pendorong, yang tidak menjalankan scanner.
++
++    git tag v0.1.0
++    git push origin v0.1.0
++
++Untuk mencoba build tanpa mendorong apa pun: tab Actions, workflow Publish, Run workflow, biarkan opsi publish mati.
++
+ ## Endpoint
+ 
+ | Endpoint | Isi |
+@@ -128,6 +151,5 @@ Bentuk data (`/metrics` dan tiap event `/stream`):
+ 
+ ## Rencana
+ 
+-- Pemindaian dependensi dan image container di CI
+ - Deploy ke VPS dengan HTTPS (Caddy)
+ - Alert Telegram saat CPU tinggi
+diff --git a/api/.dockerignore b/api/.dockerignore
+index a5032ef..2cc4c08 100644
+--- a/api/.dockerignore
++++ b/api/.dockerignore
+@@ -6,5 +6,5 @@ __pycache__/
+ tests/
+ pytest.ini
+ requirements-dev.txt
+-Containerfile
++Dockerfile
+ .dockerignore
+diff --git a/api/Containerfile b/api/Dockerfile
+similarity index 79%
+rename from api/Containerfile
+rename to api/Dockerfile
+index 3f3deca..577ed0c 100644
+--- a/api/Containerfile
++++ b/api/Dockerfile
+@@ -1,4 +1,7 @@
+-FROM docker.io/library/python:3.14-slim
++FROM docker.io/library/python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
++
++LABEL org.opencontainers.image.source="https://github.com/wiryaptr/pulse-monitor" \
++      org.opencontainers.image.description="Pulse Monitor API (FastAPI)"
+ 
+ ENV PYTHONDONTWRITEBYTECODE=1 \
+     PYTHONUNBUFFERED=1 \
+diff --git a/api/tests/test_shutdown.py b/api/tests/test_shutdown.py
+index 9756179..95d6afe 100644
+--- a/api/tests/test_shutdown.py
++++ b/api/tests/test_shutdown.py
+@@ -1,6 +1,6 @@
+ """Container dihentikan dengan SIGTERM. Selama masih ada klien SSE yang terbuka, uvicorn tanpa batas
+ waktu tidak mau berhenti, sehingga engine harus mengirim SIGKILL setelah 10 detik. Tes ini menjalankan
+-uvicorn dengan argumen persis dari CMD di Containerfile."""
++uvicorn dengan argumen persis dari CMD di Dockerfile."""
+ import json
+ import re
+ import signal
+@@ -10,14 +10,14 @@ import sys
+ import time
+ from pathlib import Path
+ 
+-CONTAINERFILE = Path(__file__).resolve().parents[1] / "Containerfile"
+-API_DIR = CONTAINERFILE.parent
++DOCKERFILE = Path(__file__).resolve().parents[1] / "Dockerfile"
++API_DIR = DOCKERFILE.parent
+ BATAS_DETIK = 8  # di bawah batas bawaan Podman dan Docker (10 detik)
+ 
+ 
+ def containerfile_args() -> list[str]:
+-    match = re.search(r"^CMD (\[.*\])$", CONTAINERFILE.read_text(), re.M)
+-    assert match, "CMD tidak ditemukan di Containerfile"
++    match = re.search(r"^CMD (\[.*\])$", DOCKERFILE.read_text(), re.M)
++    assert match, "CMD tidak ditemukan di Dockerfile"
+     cmd = json.loads(match.group(1))
+     assert cmd[0] == "uvicorn"
+     return cmd[1:]
+diff --git a/compose.yaml b/compose.yaml
+index 2a1cfaa..b29e5ce 100644
+--- a/compose.yaml
++++ b/compose.yaml
+@@ -14,7 +14,7 @@ services:
+   api:
+     build:
+       context: ./api
+-      dockerfile: Containerfile
++      dockerfile: Dockerfile
+     image: pulse-api:local
+     restart: unless-stopped
+     environment:
+@@ -36,7 +36,7 @@ services:
+   web:
+     build:
+       context: ./frontend
+-      dockerfile: Containerfile
++      dockerfile: Dockerfile
+       args:
+         VITE_API_URL: /api
+     image: pulse-web:local
+diff --git a/frontend/.dockerignore b/frontend/.dockerignore
+index ce0dd07..b8b0421 100644
+--- a/frontend/.dockerignore
++++ b/frontend/.dockerignore
+@@ -1,5 +1,5 @@
+ node_modules/
+ dist/
+ *.log
+-Containerfile
++Dockerfile
+ .dockerignore
+diff --git a/frontend/Containerfile b/frontend/Dockerfile
+similarity index 62%
+rename from frontend/Containerfile
+rename to frontend/Dockerfile
+index 31ccbeb..46afc47 100644
+--- a/frontend/Containerfile
++++ b/frontend/Dockerfile
+@@ -1,5 +1,5 @@
+ # Tahap 1: build file statis
+-FROM docker.io/library/node:22-slim AS build
++FROM docker.io/library/node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS build
+ WORKDIR /app
+ COPY package.json package-lock.json ./
+ RUN npm ci
+@@ -10,7 +10,10 @@ ENV VITE_API_URL=$VITE_API_URL
+ RUN npm run build
+ 
+ # Tahap 2: Caddy menyajikan file statis dan meneruskan /api ke backend
+-FROM docker.io/library/caddy:2-alpine
++FROM docker.io/library/caddy:2-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
++
++LABEL org.opencontainers.image.source="https://github.com/wiryaptr/pulse-monitor" \
++      org.opencontainers.image.description="Pulse Monitor web (frontend + Caddy)"
+ COPY Caddyfile /etc/caddy/Caddyfile
+ COPY --from=build /app/dist /srv
+ RUN adduser -S -H -u 10001 pulse
+@@ -19,6 +22,6 @@ ENV XDG_DATA_HOME=/tmp/xdg/data XDG_CONFIG_HOME=/tmp/xdg/config
+ USER 10001
+ EXPOSE 8080
+ 
+-# Lihat catatan HEALTHCHECK di api/Containerfile (podman build --format docker)
++# Lihat catatan HEALTHCHECK di api/Dockerfile (podman build --format docker)
+ HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
+     CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+diff --git a/scripts/install-trivy.sh b/scripts/install-trivy.sh
+new file mode 100755
+index 0000000..0aebe8c
+--- /dev/null
++++ b/scripts/install-trivy.sh
+@@ -0,0 +1,29 @@
++#!/usr/bin/env bash
++# Memasang Trivy yang dikunci ke satu versi dan satu sha256. Sengaja tanpa GitHub Action pihak ketiga.
++#
++# Latar belakang: pada Maret 2026 rantai pasokan Trivy dibobol (CVE-2026-33634, GHSA-69fq-xp46-6x23):
++# trivy-action, setup-trivy, binary v0.69.4, dan image 0.69.4 sampai 0.69.6 berisi pencuri kredensial.
++# Versi ini (v0.69.3) tercantum aman di advisory itu dan rilisnya immutable.
++#
++# Menaikkan versi: periksa dulu advisory terbaru, sha256 terhadap checksums.txt di rilis yang sama, dan
++# tanda tangan Sigstore (cosign verify-blob), baru ganti VERSION dan SHA256 di bawah.
++#
++#   bash scripts/install-trivy.sh [direktori-tujuan]     (bawaan: $HOME/.local/bin)
++set -euo pipefail
++
++VERSION="0.69.3"
++SHA256="1816b632dfe529869c740c0913e36bd1629cb7688bd5634f4a858c1d57c88b75"
++DEST="${1:-$HOME/.local/bin}"
++
++tmp="$(mktemp -d)"
++trap 'rm -rf "$tmp"' EXIT
++
++curl -fsSL --retry 3 -o "$tmp/trivy.tar.gz" \
++  "https://github.com/aquasecurity/trivy/releases/download/v${VERSION}/trivy_${VERSION}_Linux-64bit.tar.gz"
++echo "${SHA256}  $tmp/trivy.tar.gz" | sha256sum -c - || { echo "GAGAL: sha256 Trivy tidak cocok, tidak dipasang" >&2; exit 1; }
++
++tar -xzf "$tmp/trivy.tar.gz" -C "$tmp" trivy
++mkdir -p "$DEST"
++install -m 0755 "$tmp/trivy" "$DEST/trivy"
++if [[ -n "${GITHUB_PATH:-}" ]]; then echo "$DEST" >> "$GITHUB_PATH"; fi
++"$DEST/trivy" --version | head -n 1
+diff --git a/scripts/smoke-containers.sh b/scripts/smoke-containers.sh
+index 241ba98..89b40ae 100755
+--- a/scripts/smoke-containers.sh
++++ b/scripts/smoke-containers.sh
+@@ -113,9 +113,9 @@ trap on_exit EXIT
+ cleanup
+ 
+ log "build image API"
+-"$ENGINE" build "${build_flags[@]}" -f "$ROOT/api/Containerfile" -t pulse-api:smoke "$ROOT/api"
++"$ENGINE" build "${build_flags[@]}" -f "$ROOT/api/Dockerfile" -t pulse-api:smoke "$ROOT/api"
+ log "build image web"
+-"$ENGINE" build "${build_flags[@]}" -f "$ROOT/frontend/Containerfile" -t pulse-web:smoke "$ROOT/frontend"
++"$ENGINE" build "${build_flags[@]}" -f "$ROOT/frontend/Dockerfile" -t pulse-web:smoke "$ROOT/frontend"
+ 
+ log "jalankan container (rootfs read-only, semua capability dibuang)"
+ "$ENGINE" network create "$NET" >/dev/null

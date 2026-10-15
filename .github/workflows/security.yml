@@ -1,0 +1,87 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 1" # tiap Senin 03:17 UTC, menangkap kerentanan baru walau kode tidak berubah
+  workflow_dispatch:
+  workflow_call: # dipanggil oleh publish.yml sebelum image didorong
+
+# Semua job di sini hanya membaca kode dan tidak memakai secret. Scanner adalah komponen pihak ketiga,
+# jadi ia sengaja tidak diberi token yang bisa menulis apa pun.
+permissions:
+  contents: read
+
+# Semua action di-pin ke SHA commit (versi tertulis di komentar). Trivy dipasang lewat
+# scripts/install-trivy.sh (versi dan sha256 dikunci), bukan lewat action pihak ketiga.
+jobs:
+  python-deps:
+    name: Dependensi Python (pip-audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - name: Pasang pip-audit
+        run: python -m pip install pip-audit==2.10.1
+      - name: Audit dependensi runtime dan dev
+        run: pip-audit -r requirements-dev.txt
+
+  node-deps:
+    name: Dependensi npm (npm audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22.22.2"
+      - name: Audit (gagal bila ada temuan HIGH atau CRITICAL)
+        run: npm audit --audit-level=high --package-lock-only
+
+  trivy-config:
+    name: Konfigurasi Dockerfile (Trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Pasang Trivy (versi dan sha256 dikunci)
+        run: bash scripts/install-trivy.sh
+      - name: Pindai konfigurasi
+        run: trivy config --skip-version-check --severity HIGH,CRITICAL --exit-code 1 .
+
+  trivy-images:
+    name: Image container (Trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Pasang Trivy (versi dan sha256 dikunci)
+        run: bash scripts/install-trivy.sh
+      - name: Build image
+        run: |
+          docker build -t pulse-api:scan api
+          docker build -t pulse-web:scan frontend
+      - name: Pindai image (HIGH dan CRITICAL yang sudah punya perbaikan)
+        run: |
+          for image in pulse-api:scan pulse-web:scan; do
+            trivy image --skip-version-check --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$image"
+          done

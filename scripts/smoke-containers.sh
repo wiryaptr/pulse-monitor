@@ -113,9 +113,9 @@ trap on_exit EXIT
 cleanup
 
 log "build image API"
-"$ENGINE" build "${build_flags[@]}" -f "$ROOT/api/Containerfile" -t pulse-api:smoke "$ROOT/api"
+"$ENGINE" build "${build_flags[@]}" -f "$ROOT/api/Dockerfile" -t pulse-api:smoke "$ROOT/api"
 log "build image web"
-"$ENGINE" build "${build_flags[@]}" -f "$ROOT/frontend/Containerfile" -t pulse-web:smoke "$ROOT/frontend"
+"$ENGINE" build "${build_flags[@]}" -f "$ROOT/frontend/Dockerfile" -t pulse-web:smoke "$ROOT/frontend"
 
 log "jalankan container (rootfs read-only, semua capability dibuang)"
 "$ENGINE" network create "$NET" >/dev/null

@@ -1,0 +1,84 @@
+name: Publish
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Push ke GHCR. Biarkan mati untuk uji build saja"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Pemeriksaan keamanan jalan di job terpisah tanpa izin menulis paket
+  security:
+    name: Pemeriksaan keamanan
+    uses: ./.github/workflows/security.yml
+
+  images:
+    name: Build dan push image ke GHCR
+    needs: security
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Izin menulis paket hanya ada di job ini, yang tidak menjalankan scanner apa pun
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Tentukan nama dan versi image
+        id: meta
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          if [[ "$REF_TYPE" == "tag" ]]; then version="${REF_NAME#v}"; else version="dev-${GITHUB_SHA::7}"; fi
+          {
+            echo "api=ghcr.io/${owner}/pulse-api"
+            echo "web=ghcr.io/${owner}/pulse-web"
+            echo "version=${version}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        env:
+          API: ${{ steps.meta.outputs.api }}
+          WEB: ${{ steps.meta.outputs.web }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          labels=(--label "org.opencontainers.image.revision=${GITHUB_SHA}" --label "org.opencontainers.image.version=${VERSION}")
+          docker build "${labels[@]}" -t "${API}:${VERSION}" api
+          docker build "${labels[@]}" -t "${WEB}:${VERSION}" frontend
+
+      - name: Login ke GHCR
+        if: env.PUBLISH == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Push image
+        if: env.PUBLISH == 'true'
+        env:
+          API: ${{ steps.meta.outputs.api }}
+          WEB: ${{ steps.meta.outputs.web }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          for image in "$API" "$WEB"; do
+            docker push "${image}:${VERSION}"
+            # tag latest hanya untuk rilis stabil (tanpa akhiran seperti -rc1)
+            if [[ "$REF_TYPE" == "tag" && "$VERSION" != *-* ]]; then
+              docker tag "${image}:${VERSION}" "${image}:latest"
+              docker push "${image}:latest"
+            fi
+            echo "- \`$(docker inspect --format '{{index .RepoDigests 0}}' "${image}:${VERSION}")\`" >> "$GITHUB_STEP_SUMMARY"
+          done

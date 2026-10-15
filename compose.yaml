@@ -14,7 +14,7 @@ services:
   api:
     build:
       context: ./api
-      dockerfile: Containerfile
+      dockerfile: Dockerfile
     image: pulse-api:local
     restart: unless-stopped
     environment:
@@ -36,7 +36,7 @@ services:
   web:
     build:
       context: ./frontend
-      dockerfile: Containerfile
+      dockerfile: Dockerfile
       args:
         VITE_API_URL: /api
     image: pulse-web:local

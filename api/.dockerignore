@@ -6,5 +6,5 @@ __pycache__/
 tests/
 pytest.ini
 requirements-dev.txt
-Containerfile
+Dockerfile
 .dockerignore

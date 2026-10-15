@@ -1,6 +1,6 @@
 """Container dihentikan dengan SIGTERM. Selama masih ada klien SSE yang terbuka, uvicorn tanpa batas
 waktu tidak mau berhenti, sehingga engine harus mengirim SIGKILL setelah 10 detik. Tes ini menjalankan
-uvicorn dengan argumen persis dari CMD di Containerfile."""
+uvicorn dengan argumen persis dari CMD di Dockerfile."""
 import json
 import re
 import signal
@@ -10,14 +10,14 @@ import sys
 import time
 from pathlib import Path
 
-CONTAINERFILE = Path(__file__).resolve().parents[1] / "Containerfile"
-API_DIR = CONTAINERFILE.parent
+DOCKERFILE = Path(__file__).resolve().parents[1] / "Dockerfile"
+API_DIR = DOCKERFILE.parent
 BATAS_DETIK = 8  # di bawah batas bawaan Podman dan Docker (10 detik)
 
 
 def containerfile_args() -> list[str]:
-    match = re.search(r"^CMD (\[.*\])$", CONTAINERFILE.read_text(), re.M)
-    assert match, "CMD tidak ditemukan di Containerfile"
+    match = re.search(r"^CMD (\[.*\])$", DOCKERFILE.read_text(), re.M)
+    assert match, "CMD tidak ditemukan di Dockerfile"
     cmd = json.loads(match.group(1))
     assert cmd[0] == "uvicorn"
     return cmd[1:]
