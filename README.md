@@ -116,6 +116,7 @@ Semua pemeriksaan di atas, ditambah `npm run build`, smoke test container, dan u
 - `pip-audit` untuk dependensi Python dan `npm audit` untuk dependensi npm (gagal bila ada temuan HIGH atau CRITICAL).
 - Trivy untuk konfigurasi Dockerfile dan untuk kedua image (HIGH dan CRITICAL yang sudah punya perbaikan).
 - Semua job pemindaian hanya punya izin `contents: read` dan tidak memakai secret.
+- Temuan yang belum bisa diperbaiki (misalnya image resmi belum dibangun ulang dengan Go terbaru) dicatat di `.trivyignore.yaml` dengan alasan dan tanggal kedaluwarsa, bukan dibungkam begitu saja. Pembenarannya diuji tiap CI (`smoke-containers.sh`): Caddy menolak header `Range`, tidak menerima HTTP/2 cleartext, dan tidak melayani TLS. Setelah tanggalnya lewat, pemindaian kembali merah sampai diputuskan ulang.
 
 **Rantai pasokan:**
 

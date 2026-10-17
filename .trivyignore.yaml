@@ -1,0 +1,32 @@
+# Temuan yang diterima sementara. Setiap entri wajib punya alasan (statement) dan expired_at.
+# Setelah tanggalnya lewat, entri tidak berlaku lagi dan pemindaian kembali merah, supaya diputuskan ulang.
+#
+# Ketiganya ada di binary Caddy (Go) pada image caddy:2-alpine yang dikunci digest. Perbaikannya ada di
+# Go 1.26.9 / 1.27.2 (dirilis 2026-10-08), tetapi image resmi belum dibangun ulang. Dependabot akan
+# mengusulkan digest baru begitu tersedia; hapus entri ini setelah itu.
+#
+# Pembenaran diuji tiap CI di scripts/smoke-containers.sh (bagian "mitigasi CVE Caddy").
+vulnerabilities:
+  - id: CVE-2026-78667
+    paths:
+      - "usr/bin/caddy"
+    statement: >-
+      Header Range berisi banyak rentang kecil membebani CPU di file_server. Jalurnya bisa dicapai, tetapi
+      frontend/Caddyfile menolak semua permintaan dengan header Range (416). Diuji.
+    expired_at: 2026-10-31
+
+  - id: CVE-2026-78669
+    paths:
+      - "usr/bin/caddy"
+    statement: >-
+      Banjir frame SETTINGS HTTP/2. Caddy sempat menerima HTTP/2 cleartext (h2c) di port 8080 (diuji),
+      sekarang dimatikan lewat servers { protocols h1 } di frontend/Caddyfile. Diuji.
+    expired_at: 2026-10-31
+
+  - id: CVE-2026-97031
+    paths:
+      - "usr/bin/caddy"
+    statement: >-
+      Referensi ECH ganda di crypto/tls sisi server. Caddy di sini tidak melayani TLS sama sekali
+      (auto_https off, port 8080 menolak TLS). Diuji.
+    expired_at: 2026-10-31

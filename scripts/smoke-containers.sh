@@ -48,6 +48,13 @@ check_stack() {
   [[ -n "$asset" ]] || fail "tidak menemukan file JS di index.html"
   curl -fsSI "$base$asset" | grep -qi '^cache-control: .*immutable' || fail "aset berhash seharusnya immutable"
 
+  log "mitigasi CVE Caddy: Range ditolak, HTTP/2 cleartext mati, tidak ada TLS (dasar .trivyignore.yaml)"
+  code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Range: bytes=0-1,2-3' "$base/")"
+  [[ "$code" == "416" ]] || fail "header Range seharusnya ditolak 416, dapat $code"
+  version="$(curl -s -o /dev/null -w '%{http_version}' --http2-prior-knowledge "$base/" || true)"
+  [[ "$version" != "2" ]] || fail "HTTP/2 cleartext (h2c) seharusnya mati"
+  if curl -sk --max-time 5 -o /dev/null "https://${base#http://}/"; then fail "port web seharusnya tidak melayani TLS"; fi
+
   log "SEMUA PEMERIKSAAN HTTP LOLOS"
 }
 

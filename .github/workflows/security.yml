@@ -85,6 +85,6 @@ jobs:
           # Kedua image dipindai dulu, baru gagal di akhir, supaya semua temuan terlihat dalam satu run
           status=0
           for image in pulse-api:scan pulse-web:scan; do
-            trivy image --skip-version-check --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$image" || status=1
+            trivy image --skip-version-check --severity HIGH,CRITICAL --ignore-unfixed --ignorefile .trivyignore.yaml --exit-code 1 "$image" || status=1
           done
           exit "$status"

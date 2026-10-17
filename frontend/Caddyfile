@@ -2,6 +2,11 @@
 	admin off
 	auto_https off
 	persist_config off
+	servers {
+		# Hanya HTTP/1.1. Tanpa ini Caddy menerima HTTP/2 cleartext (h2c) di port 8080 (diuji), padahal
+		# browser tidak memerlukannya. Menutup jalur CVE-2026-78669 (banjir frame SETTINGS HTTP/2).
+		protocols h1
+	}
 }
 
 :8080 {
@@ -24,6 +29,12 @@
 	}
 
 	handle {
+		# Mitigasi CVE-2026-78667 (net/http, Go sebelum 1.26.9): header Range yang berisi banyak rentang kecil
+		# membebani CPU di file_server. Situs ini hanya menyajikan berkas kecil yang tidak butuh Range, jadi
+		# permintaan dengan header itu ditolak. Diuji di scripts/smoke-containers.sh.
+		@range header Range *
+		respond @range "Range tidak didukung" 416
+
 		@assets path /assets/*
 		header @assets Cache-Control "public, max-age=31536000, immutable"
 		@html path / /index.html
