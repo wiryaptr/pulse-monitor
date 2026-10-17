@@ -12,7 +12,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+# pip dibuang setelah dependensi terpasang. Saat berjalan, aplikasi tidak memakainya, dan pip membundel
+# salinan pustaka (urllib3, requests, certifi) yang kerap dilaporkan pemindai walau tidak pernah dipakai.
+RUN pip install -r requirements.txt \
+    && pip uninstall -y pip
 
 COPY main.py .
 

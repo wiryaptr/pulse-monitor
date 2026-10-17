@@ -82,6 +82,9 @@ jobs:
           docker build -t pulse-web:scan frontend
       - name: Pindai image (HIGH dan CRITICAL yang sudah punya perbaikan)
         run: |
+          # Kedua image dipindai dulu, baru gagal di akhir, supaya semua temuan terlihat dalam satu run
+          status=0
           for image in pulse-api:scan pulse-web:scan; do
-            trivy image --skip-version-check --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$image"
+            trivy image --skip-version-check --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$image" || status=1
           done
+          exit "$status"

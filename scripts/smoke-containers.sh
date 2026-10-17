@@ -136,5 +136,9 @@ for name in "$API" "$WEB"; do
   printf '%s: uid %s\n' "$name" "$uid"
 done
 
+log "pip tidak ada di image API (tidak dipakai saat runtime, dan membundel pustaka yang sering dilaporkan pemindai)"
+"$ENGINE" exec "$API" python -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('pip') is None else 1)" \
+  || fail "pip masih ada di image API"
+
 check_stack "http://127.0.0.1:$PORT"
 report_metrics

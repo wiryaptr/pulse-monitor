@@ -61,3 +61,9 @@ updates:
       default-days: 7
     commit-message:
       prefix: "chore(web)"
+    # Dependabot hanya melihat nomor versi, bukan status dukungannya. Tanpa aturan ini ia pernah mengusulkan
+    # Node 25 (EOL sejak 1 Juni 2026, tidak menerima patch keamanan). Versi mayor Node dinaikkan manual
+    # ke rilis LTS yang masih didukung (lihat jadwal di nodejs.org/en/about/previous-releases).
+    ignore:
+      - dependency-name: "library/node"
+        update-types: ["version-update:semver-major"]
