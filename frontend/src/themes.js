@@ -18,10 +18,57 @@ export const THEMES = {
 
 export const THEME_NAMES = ["system", ...Object.keys(THEMES)];
 
+// --- Kontras WCAG. Beberapa palet populer (tokyonight-day, nord) punya warna teks di bawah 4,5:1.
+const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const hexOf = (v) => "#" + v.map((x) => Math.round(x).toString(16).padStart(2, "0")).join("");
+const lin = (v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+export const luminance = (h) => { const [r, g, b] = rgb(h).map(lin); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+export const contrast = (a, b) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+const mix = (a, b, t) => { const y = rgb(b); return hexOf(rgb(a).map((v, i) => v + (y[i] - v) * t)); };
+
+// Menggeser warna ke putih (latar gelap) atau hitam (latar terang) sampai kontrasnya cukup terhadap semua latar.
+// Warna yang sudah cukup tidak diubah.
+export const ensureContrast = (fg, backgrounds, min = 4.5) => {
+  const worst = (c) => Math.min(...backgrounds.map((bg) => contrast(c, bg)));
+  if (worst(fg) >= min) return fg;
+  const toward = luminance(backgrounds[0]) < 0.5 ? "#ffffff" : "#000000";
+  for (let t = 0.04; t <= 1; t += 0.04) {
+    const c = mix(fg, toward, t);
+    if (worst(c) >= min) return c;
+  }
+  return toward;
+};
+
+export const TEXT_TOKENS = ["text", "muted", "primary", "secondary", "accent", "success", "warning", "error"];
+
+// Permukaan turunan tempat teks juga tampil: item navigasi atau tombol aktif (primary 16% di atas panel)
+// dan latar saat hover atau fokus (text 8% di atas panel). Nilai ini harus sama dengan yang dipakai App.css.
+export const derivedSurfaces = (t) => [mix(t.panel, t.primary, 0.16), mix(t.panel, t.text, 0.08)];
+
+const adjust = (t, backgrounds) => ({
+  ...t,
+  ...Object.fromEntries(TEXT_TOKENS.map((k) => [k, ensureContrast(t[k], backgrounds)])),
+});
+
+// Menggeser primary juga menggeser semburat permukaan aktif, jadi diulang sampai stabil.
+export const makeAccessible = (t) => {
+  let cur = adjust(t, [t.background, t.panel]);
+  for (let i = 0; i < 6; i++) {
+    const next = adjust(cur, [cur.background, cur.panel, ...derivedSurfaces(cur)]);
+    if (TEXT_TOKENS.every((k) => next[k] === cur[k])) break;
+    cur = next;
+  }
+  return cur;
+};
+const ACCESSIBLE = Object.fromEntries(Object.entries(THEMES).map(([n, t]) => [n, makeAccessible(t)]));
+
 export const palette = (name) =>
   name === "system"
-    ? THEMES[window.matchMedia("(prefers-color-scheme: light)").matches ? "tokyonight-day" : "jaringan"]
-    : THEMES[name];
+    ? ACCESSIBLE[window.matchMedia("(prefers-color-scheme: light)").matches ? "tokyonight-day" : "jaringan"]
+    : ACCESSIBLE[name];
 
 export const applyTheme = (name) => {
   const p = palette(name);

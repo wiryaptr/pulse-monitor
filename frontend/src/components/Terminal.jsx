@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { API_URL } from "../config";
+import { downloadCSV } from "../csv";
 import { HELP, STATUS, fmtTime } from "../data";
 import { THEME_NAMES, palette } from "../themes";
 import { Line, Ps } from "./Prompt";
@@ -17,15 +18,6 @@ export default function Terminal({ metrics, history, setHistory, status, paused,
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
   }, [log]);
 
-  const exportCSV = () => {
-    const rows = ["ts,cpu,ram,disk", ...history.map((h) => `${h.ts},${h.cpu},${h.ram},${h.disk}`)];
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([rows.join("\n")], { type: "text/csv" }));
-    a.download = "pulse-metrics.csv";
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-
   const run = (raw) => {
     const text = raw.trim();
     const [c, arg] = text.toLowerCase().replace(/^\//, "").split(/\s+/);
@@ -42,8 +34,8 @@ export default function Terminal({ metrics, history, setHistory, status, paused,
         res = metrics ? <StatusView metrics={metrics} stale={stale} /> : <div className="bad">belum ada data</div>;
         break;
       case "graph":
-        go("grafik");
-        res = <div className="dim">membuka grafik di bawah</div>;
+        go("metrics");
+        res = <div className="dim">membuka halaman Metrics</div>;
         break;
       case "pause":
         setPaused(true);
@@ -59,7 +51,7 @@ export default function Terminal({ metrics, history, setHistory, status, paused,
         break;
       case "export":
         if (!history.length) res = <div className="bad">export: riwayat kosong</div>;
-        else { exportCSV(); res = <div className="ok">pulse-metrics.csv diunduh, {history.length} baris</div>; }
+        else { downloadCSV(history); res = <div className="ok">pulse-metrics.csv diunduh, {history.length} baris</div>; }
         break;
       case "theme":
         if (!arg) {

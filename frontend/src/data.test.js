@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bar, fmtUptime, isSnapshot, level, toPoint } from "./data";
+import { ROUTES, bar, fmtUptime, isSnapshot, level, statsOf, toPoint } from "./data";
 
 const valid = {
   ts: "2026-10-14T10:00:00Z",
@@ -47,5 +47,21 @@ describe("isSnapshot", () => {
 describe("toPoint", () => {
   it("meratakan snapshot untuk grafik dan CSV", () => {
     expect(toPoint(valid)).toMatchObject({ ts: valid.ts, cpu: 5, ram: 6, disk: 7 });
+  });
+});
+
+describe("statsOf", () => {
+  const h = [{ cpu: 10 }, { cpu: 30 }, { cpu: 20 }];
+  it("menghitung nilai terakhir, rata-rata, minimum, dan maksimum", () => {
+    expect(statsOf(h, "cpu")).toEqual({ n: 3, now: 20, avg: 20, min: 10, max: 30 });
+  });
+  it("riwayat kosong menghasilkan null", () => expect(statsOf([], "cpu")).toBeNull());
+});
+
+describe("ROUTES", () => {
+  it("id unik dan aman dipakai di URL", () => {
+    const ids = ROUTES.map((r) => r.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) expect(id).toMatch(/^[a-z]+$/);
   });
 });

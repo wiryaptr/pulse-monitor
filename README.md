@@ -5,6 +5,20 @@
 
 Dashboard untuk memantau CPU, RAM, dan disk server secara langsung dari browser. API Python membaca metrik dengan psutil, FastAPI menyiarkannya lewat SSE, dan React menampilkannya sebagai bar teks, grafik garis, dan terminal yang bisa diketik.
 
+## Tampilan
+
+![Halaman Overview, tema gelap](docs/screenshots/overview-dark.png)
+
+| Tema terang | Metrics | Console |
+|---|---|---|
+| ![Overview, tema terang](docs/screenshots/overview-light.png) | ![Halaman Metrics](docs/screenshots/metrics.png) | ![Halaman Console](docs/screenshots/console.png) |
+
+| Mobile | Data lama (API berhenti mengirim) |
+|---|---|
+| <img src="docs/screenshots/mobile.png" width="240" alt="Overview di layar sempit, navigasi di bilah bawah"> | ![Kartu diredupkan dan banner peringatan](docs/screenshots/stale.png) |
+
+Tangkapan layar diambil dari server demo yang mengirim data sintetis dengan kontrak API yang sama (divalidasi terhadap model Pydantic API asli), supaya grafiknya representatif. Frontend-nya sama dengan yang dijalankan.
+
 ## Cara kerja
 
     psutil  ->  FastAPI /stream (SSE, 2 detik)  ->  EventSource  ->  React
@@ -16,13 +30,23 @@ Dashboard untuk memantau CPU, RAM, dan disk server secara langsung dari browser.
 - Frontend menampilkan status koneksi (terhubung, menyambung ulang, data lama) dan menyambung ulang sendiri dengan jeda bertahap, termasuk saat server menolak koneksi (503).
 - psutil membaca lingkungan tempat prosesnya berjalan, jadi angka dari dalam container bisa berbeda dari host (lihat Keterbatasan metrik di container).
 
+## Antarmuka
+
+- Empat halaman dengan navigasi sidebar (bilah bawah di layar sempit): **Overview** (kartu CPU, memori, disk dengan sparkline, riwayat, info sistem), **Metrics** (grafik dengan pilihan seri, jeda, ekspor CSV, tabel statistik), **Console** (terminal perintah), dan **About**. Routing memakai hash (`#/metrics`), tanpa library.
+- Kondisi koneksi selalu terlihat: terhubung, menyambung ulang, atau data lama. Saat tidak sehat, banner muncul dan kartu diredupkan supaya angka lama tidak dikira terbaru.
+- Recharts dimuat malas, jadi bundel awal sekitar 78 kB (gzip) dan grafik baru diunduh saat halaman yang memakainya dibuka. Tanpa font atau skrip dari luar.
+- Aksesibilitas: urutan Tab yang logis, skip link, fokus pindah ke konten saat ganti halaman, meter dengan `role="meter"`, dan kontras teks minimal 4,5:1 di semua tema. Palet populer yang tidak memenuhi syarat (misalnya `tokyonight-day` dan `nord`) digeser otomatis oleh `themes.js` sampai lolos, dan tesnya memeriksa semua tema. Hasilnya lebih redup dari palet aslinya pada tema terang.
+- Diaudit manual dengan axe-core di browser sungguhan: 12 tema, empat halaman, lebar desktop dan mobile, termasuk kondisi data lama dan terputus, tanpa pelanggaran saat diaudit. Audit ini belum menjadi bagian CI.
+
 ## Struktur
 
     api/        FastAPI (main.py), tes (tests/: endpoint, sampler, SSE), Dockerfile
     frontend/   Vite + React 19 + Recharts, Dockerfile, Caddyfile
-      src/components/   Terminal, StatusView, About, dll
-      src/hooks.js      useMetrics, useTyper, useTheme, dll (tesnya: hooks.test.js)
-      src/themes.js     13 tema warna
+      src/pages/        Overview, Metrics, Console, About
+      src/components/   Sidebar, Topbar, MetricCard, Sparkline, ConnectionBanner, Terminal, dll
+      src/hooks.js      useMetrics (SSE, reconnect, stale), useTheme, useHashRoute
+      src/themes.js     12 palet + mode system, kontras dijaga otomatis
+    docs/screenshots/   gambar untuk README
     scripts/    smoke-containers.sh (build dan uji container), install-trivy.sh
     compose.yaml, .env.example   menjalankan api dan web sekaligus
     .github/workflows/          ci.yml (tes), security.yml (pemindaian), publish.yml (rilis ke GHCR)

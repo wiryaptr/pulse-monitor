@@ -1,9 +1,9 @@
 import { THEME_NAMES } from "./themes";
 
 export const PENS = [
-  { key: "cpu", label: "CPU", color: "var(--primary)", pick: (m) => m.cpu.percent },
-  { key: "ram", label: "RAM", color: "var(--secondary)", pick: (m) => m.memory.percent },
-  { key: "disk", label: "DISK", color: "var(--accent)", pick: (m) => m.disk.percent },
+  { key: "cpu", label: "CPU", title: "CPU", color: "var(--primary)", pick: (m) => m.cpu.percent },
+  { key: "ram", label: "RAM", title: "Memori", color: "var(--secondary)", pick: (m) => m.memory.percent },
+  { key: "disk", label: "DISK", title: "Disk", color: "var(--accent)", pick: (m) => m.disk.percent },
 ];
 
 // Status koneksi: [teks, kelas warna]. "on" hijau, "warn" kuning, kosong merah.
@@ -14,19 +14,27 @@ export const STATUS = {
   stale: ["data lama", "warn"],
 };
 
+// Halaman aplikasi. id dipakai di URL (#/overview).
+export const ROUTES = [
+  { id: "overview", label: "Overview", hint: "Kondisi server saat ini" },
+  { id: "metrics", label: "Metrics", hint: "Riwayat dan statistik" },
+  { id: "console", label: "Console", hint: "Terminal perintah" },
+  { id: "about", label: "About", hint: "Cara kerja dan stack" },
+];
+
 export const FEATURES = [
   ["Langsung", "data masuk lewat SSE, satu pembacaan tiap 2 detik"],
   ["Tiga metrik", "CPU, RAM, dan disk, dengan status normal, tinggi (60%), dan kritis (80%)"],
-  ["Riwayat", "60 pembacaan terakhir digambar sebagai grafik garis dan bisa diunduh sebagai CSV"],
+  ["Riwayat", "60 pembacaan terakhir digambar sebagai grafik dan bisa diunduh sebagai CSV"],
   ["Ringan", "tanpa database, riwayat cukup disimpan di memori browser"],
-  ["Terminal", "ketik perintah langsung di halaman: status, graph, pause, export, dan lainnya"],
-  ["Tema", `${THEME_NAMES.length} pilihan warna, ganti dengan perintah theme`],
+  ["Console", "terminal di halaman: status, graph, pause, export, theme, dan lainnya"],
+  ["Tema", `${THEME_NAMES.length} pilihan warna dengan kontras yang dijaga memenuhi WCAG AA`],
 ];
 
 export const HOW = [
   ["1 baca", "API Python membaca CPU, RAM, dan disk lewat psutil"],
   ["2 siarkan", "FastAPI mengirim hasilnya lewat SSE di /stream, satu pembacaan tiap 2 detik"],
-  ["3 gambar", "React menerimanya dengan EventSource, menyimpan 60 pembacaan terakhir, lalu menampilkannya sebagai bar teks dan grafik garis"],
+  ["3 gambar", "React menerimanya dengan EventSource, menyimpan 60 pembacaan terakhir, lalu menampilkannya sebagai kartu, grafik garis, dan terminal"],
 ];
 
 export const STACK = [
@@ -37,13 +45,13 @@ export const STACK = [
 
 export const NOTES = [
   ["Kenapa SSE", "datanya cuma searah dari server, jadi tidak perlu WebSocket. Browser menyambung ulang sendiri kalau putus, dan kalau server menolak (misalnya 503) aplikasi mencoba lagi dengan jeda bertahap"],
-  ["Dua tampilan", "status berupa bar teks yang ringan, sedangkan riwayat memakai grafik garis supaya mudah dibaca"],
-  ["Di container", "disk yang terbaca milik container, jadi partisi host perlu di-mount kalau mau memantau host"],
+  ["Status koneksi", "terhubung, menyambung ulang, atau data lama ditampilkan di atas halaman, dan angka lama diredupkan supaya tidak dikira terbaru"],
+  ["Di container", "CPU, RAM, dan uptime adalah pembacaan host. Disk / adalah filesystem tempat penyimpanan container, dan jaringan hanya menampilkan antarmuka container. Detail dan hasil ukurnya ada di README"],
 ];
 
 export const HELP = [
   ["status", "cetak pembacaan terakhir"],
-  ["graph", "lompat ke grafik"],
+  ["graph", "buka halaman Metrics"],
   ["pause", "hentikan data masuk sementara"],
   ["resume", "lanjutkan data masuk"],
   ["reset", "kosongkan riwayat"],
@@ -81,3 +89,16 @@ export const toPoint = (s) => ({
   ram: s.memory.percent,
   disk: s.disk.percent,
 });
+
+// Ringkasan satu metrik pada jendela riwayat: nilai terakhir, rata-rata, minimum, maksimum
+export const statsOf = (history, key) => {
+  if (!history.length) return null;
+  const v = history.map((h) => h[key]);
+  return {
+    n: v.length,
+    now: v[v.length - 1],
+    avg: v.reduce((a, b) => a + b, 0) / v.length,
+    min: Math.min(...v),
+    max: Math.max(...v),
+  };
+};

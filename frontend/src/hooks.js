@@ -1,31 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { API_URL, MAX_POINTS, REDUCED, RECONNECT_MAX_MS, RECONNECT_MIN_MS, STALE_FACTOR } from "./config";
+import { API_URL, MAX_POINTS, RECONNECT_MAX_MS, RECONNECT_MIN_MS, STALE_FACTOR } from "./config";
 import { isSnapshot, toPoint } from "./data";
 import { applyTheme, loadTheme, saveTheme } from "./themes";
-
-// Mengetik teks karakter demi karakter setelah `go` bernilai true
-export function useTyper(text, go) {
-  const [n, setN] = useState(REDUCED ? text.length : 0);
-  useEffect(() => {
-    if (!go || n >= text.length) return;
-    const t = setTimeout(() => setN((x) => x + 1), 70 + Math.random() * 60);
-    return () => clearTimeout(t);
-  }, [go, n, text]);
-  return [text.slice(0, n), n >= text.length];
-}
-
-// True begitu elemen pertama kali terlihat di layar
-export function useInView(ref, threshold = 0.12) {
-  const [seen, setSeen] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || seen) return;
-    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setSeen(true); io.disconnect(); } }, { threshold });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [seen, ref, threshold]);
-  return seen;
-}
 
 // Menyambung ke /stream. status: connecting | connected | reconnecting | stale
 export function useMetrics() {
@@ -114,17 +90,19 @@ export function useTheme() {
   return [theme, setTheme];
 }
 
-// Menandai bagian halaman yang sedang di tengah layar
-export function useActiveSection(ids) {
+// Routing berbasis hash (#/overview). Tanpa library karena hanya ada empat halaman.
+const routeFromHash = (ids, fallback) => {
+  const id = window.location.hash.replace(/^#\/?/, "");
+  return ids.includes(id) ? id : fallback;
+};
+
+export function useHashRoute(ids, fallback = ids[0]) {
   const key = ids.join(",");
-  const [active, setActive] = useState(ids[0]);
+  const [route, setRoute] = useState(() => routeFromHash(ids, fallback));
   useEffect(() => {
-    const io = new IntersectionObserver(
-      (es) => es.forEach((e) => e.isIntersecting && setActive(e.target.id)),
-      { rootMargin: "-40% 0px -55% 0px" }
-    );
-    key.split(",").forEach((id) => { const el = document.getElementById(id); if (el) io.observe(el); });
-    return () => io.disconnect();
-  }, [key]);
-  return [active, setActive];
+    const onChange = () => setRoute(routeFromHash(key.split(","), fallback));
+    window.addEventListener("hashchange", onChange);
+    return () => window.removeEventListener("hashchange", onChange);
+  }, [key, fallback]);
+  return route;
 }
