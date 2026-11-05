@@ -15,4 +15,4 @@ vulnerabilities:
     statement: >-
       Banjir frame SETTINGS HTTP/2. Caddy sempat menerima HTTP/2 cleartext (h2c) di port 8080 (diuji),
       sekarang dimatikan lewat servers { protocols h1 } di frontend/Caddyfile. Diuji.
-    expired_at: 2026-10-31
+    expired_at: 2026-11-30
