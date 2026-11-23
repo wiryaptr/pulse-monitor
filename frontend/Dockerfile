@@ -11,7 +11,7 @@ RUN npm run build
 
 # Tahap 1b: build binary Caddy dari source dengan Go >= 1.26.10 (perbaikan CVE-2026-111943; image resmi
 # caddy:2-alpine masih memakai Go 1.26.8 karena Caddy 2.11.7 dirilis sebelum patch tersebut).
-FROM docker.io/library/golang:1.26-alpine@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba AS caddy-src
+FROM docker.io/library/golang:1.27-alpine@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 AS caddy-src
 RUN apk add --no-cache git libc-dev
 WORKDIR /src
 RUN git clone --depth 1 --branch v2.11.7 https://github.com/caddyserver/caddy.git .
