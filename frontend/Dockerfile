@@ -18,7 +18,7 @@ RUN git clone --depth 1 --branch v2.11.7 https://github.com/caddyserver/caddy.gi
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/caddy ./cmd/caddy
 
 # Tahap 2: Caddy menyajikan file statis dan meneruskan /api ke backend
-FROM docker.io/library/caddy:2-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
+FROM docker.io/library/caddy:2-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
 
 LABEL org.opencontainers.image.source="https://github.com/wiryaptr/pulse-monitor" \
       org.opencontainers.image.description="Pulse Monitor web (frontend + Caddy)"
